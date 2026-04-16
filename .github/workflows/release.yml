@@ -11,7 +11,6 @@ permissions:
 
 env:
   APP_NAME: voicebox-asr
-  MODEL_DIR_NAME: paraformer-zh-small-2024-03-09
 
 jobs:
   build:
@@ -58,10 +57,10 @@ jobs:
         run: |
           set -euo pipefail
           PACKAGE_ROOT="dist/${APP_NAME}-${{ matrix.target_id }}"
-          mkdir -p "${PACKAGE_ROOT}/models/${MODEL_DIR_NAME}"
+          mkdir -p "${PACKAGE_ROOT}"
           cp "target/release/${{ matrix.binary_name }}" "${PACKAGE_ROOT}/${{ matrix.binary_name }}"
-          cp "models/${MODEL_DIR_NAME}/model.int8.onnx" "${PACKAGE_ROOT}/models/${MODEL_DIR_NAME}/model.int8.onnx"
-          cp "models/${MODEL_DIR_NAME}/tokens.txt" "${PACKAGE_ROOT}/models/${MODEL_DIR_NAME}/tokens.txt"
+          cp -R models "${PACKAGE_ROOT}/models"
+          find "${PACKAGE_ROOT}/models" -name '.DS_Store' -delete
           cp README.md "${PACKAGE_ROOT}/README.md"
 
       - name: Create tar.gz archive

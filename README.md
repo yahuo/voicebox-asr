@@ -15,6 +15,8 @@ models/
   paraformer-zh-small-2024-03-09/
     model.int8.onnx
     tokens.txt
+  punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8/
+    model.int8.onnx
 ```
 
 启动：
@@ -38,6 +40,7 @@ http://127.0.0.1:8765
 ```
 
 当前模型只支持中文，转写时用 `language=zh`。
+当前默认会在 ASR 结果后再跑一层离线标点恢复。
 
 ### `GET /healthz`
 

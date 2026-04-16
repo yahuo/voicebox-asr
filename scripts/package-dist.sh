@@ -5,19 +5,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="voicebox-asr"
 DIST_DIR="$ROOT_DIR/dist/$APP_NAME"
-MODEL_DIR_NAME="paraformer-zh-small-2024-03-09"
-SOURCE_MODEL_DIR="$ROOT_DIR/models/$MODEL_DIR_NAME"
-SOURCE_MODEL_FILE="$SOURCE_MODEL_DIR/model.int8.onnx"
-SOURCE_TOKENS_FILE="$SOURCE_MODEL_DIR/tokens.txt"
+SOURCE_MODELS_DIR="$ROOT_DIR/models"
 RELEASE_BIN="$ROOT_DIR/target/release/$APP_NAME"
 
-if [[ ! -f "$SOURCE_MODEL_FILE" ]]; then
-  echo "Missing model file: $SOURCE_MODEL_FILE" >&2
-  exit 1
-fi
-
-if [[ ! -f "$SOURCE_TOKENS_FILE" ]]; then
-  echo "Missing tokens file: $SOURCE_TOKENS_FILE" >&2
+if [[ ! -d "$SOURCE_MODELS_DIR" ]]; then
+  echo "Missing models directory: $SOURCE_MODELS_DIR" >&2
   exit 1
 fi
 
@@ -25,11 +17,11 @@ echo "Building release binary..."
 cargo build --release --manifest-path "$ROOT_DIR/Cargo.toml"
 
 rm -rf "$DIST_DIR"
-mkdir -p "$DIST_DIR/models/$MODEL_DIR_NAME"
+mkdir -p "$DIST_DIR"
 
 cp "$RELEASE_BIN" "$DIST_DIR/$APP_NAME"
-cp "$SOURCE_MODEL_FILE" "$DIST_DIR/models/$MODEL_DIR_NAME/model.int8.onnx"
-cp "$SOURCE_TOKENS_FILE" "$DIST_DIR/models/$MODEL_DIR_NAME/tokens.txt"
+cp -R "$SOURCE_MODELS_DIR" "$DIST_DIR/models"
+find "$DIST_DIR/models" -name '.DS_Store' -delete
 chmod +x "$DIST_DIR/$APP_NAME"
 
 cat > "$DIST_DIR/README.txt" <<'EOF'
@@ -43,8 +35,7 @@ Default URL:
 
 This folder must keep the following relative layout:
   voicebox-asr
-  models/paraformer-zh-small-2024-03-09/model.int8.onnx
-  models/paraformer-zh-small-2024-03-09/tokens.txt
+  models/
 EOF
 
 echo "Packaged release directory:"

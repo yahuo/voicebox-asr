@@ -2,7 +2,7 @@ use std::io::Cursor;
 use std::net::{IpAddr, SocketAddr};
 use std::path::Path;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use axum::body::Bytes;
@@ -13,14 +13,21 @@ use axum::routing::{get, post};
 use axum::{Json, Router};
 use clap::Parser;
 use serde::{Deserialize, Serialize};
-use sherpa_onnx::{OfflineParaformerModelConfig, OfflineRecognizer, OfflineRecognizerConfig};
+use sherpa_onnx::{
+    OfflineParaformerModelConfig, OfflinePunctuation, OfflinePunctuationConfig, OfflineRecognizer,
+    OfflineRecognizerConfig,
+};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 const DEFAULT_MODEL_DIR: &str = "models/paraformer-zh-small-2024-03-09";
 const DEFAULT_MODEL_FILE: &str = "model.int8.onnx";
 const DEFAULT_TOKENS_FILE: &str = "tokens.txt";
+const DEFAULT_PUNCT_MODEL_DIR_NAME: &str = "punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8";
+const DEFAULT_PUNCT_MODEL_DIR: &str =
+    "models/punct-ct-transformer-zh-en-vocab272727-2024-04-12-int8";
+const DEFAULT_PUNCT_MODEL_FILE: &str = "model.int8.onnx";
 const EMBEDDED_INDEX_HTML: &str = include_str!("../index.html");
 
 #[derive(Parser, Debug)]
@@ -40,6 +47,9 @@ struct Args {
 
     #[arg(long, env = "VOICEBOX_MODEL_DIR")]
     model_dir: Option<PathBuf>,
+
+    #[arg(long, env = "VOICEBOX_PUNCT_MODEL")]
+    punct_model: Option<PathBuf>,
 
     #[arg(long, env = "VOICEBOX_THREADS", default_value_t = 2)]
     threads: i32,
@@ -63,10 +73,12 @@ struct AsrEngine {
     model_root: PathBuf,
     model_path: PathBuf,
     tokens_path: PathBuf,
+    punctuation_model_path: Option<PathBuf>,
     default_language: String,
     provider: String,
     debug: bool,
     threads: i32,
+    punctuator: Option<Mutex<OfflinePunctuation>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -82,6 +94,8 @@ struct HealthResponse {
     model_root: String,
     model_path: String,
     tokens_path: String,
+    punctuation_enabled: bool,
+    punctuation_model_path: Option<String>,
     default_language: String,
     provider: String,
     threads: i32,
@@ -201,6 +215,48 @@ fn candidate_model_dirs(args: &Args) -> Vec<PathBuf> {
     )
 }
 
+fn punct_model_candidate_dirs(args: &Args) -> Vec<PathBuf> {
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf));
+    let cwd = std::env::current_dir().ok();
+
+    dedupe_paths(
+        args.punct_model
+            .iter()
+            .filter_map(|path| path_parent(path))
+            .chain(
+                args.model_dir
+                    .iter()
+                    .filter_map(|path| path_parent(path))
+                    .map(|path| path.join(DEFAULT_PUNCT_MODEL_DIR_NAME)),
+            )
+            .chain(
+                args.model
+                    .iter()
+                    .filter_map(|path| path_parent(path))
+                    .filter_map(|path| path_parent(&path))
+                    .map(|path| path.join(DEFAULT_PUNCT_MODEL_DIR_NAME)),
+            )
+            .chain(
+                args.tokens
+                    .iter()
+                    .filter_map(|path| path_parent(path))
+                    .filter_map(|path| path_parent(&path))
+                    .map(|path| path.join(DEFAULT_PUNCT_MODEL_DIR_NAME)),
+            )
+            .chain(
+                exe_dir
+                    .into_iter()
+                    .map(|path| path.join(DEFAULT_PUNCT_MODEL_DIR)),
+            )
+            .chain(
+                cwd.into_iter()
+                    .map(|path| path.join(DEFAULT_PUNCT_MODEL_DIR)),
+            ),
+    )
+}
+
 fn resolve_asset_path(
     explicit_path: Option<&PathBuf>,
     file_name: &str,
@@ -230,6 +286,32 @@ fn resolve_asset_path(
     )))
 }
 
+fn resolve_optional_asset_path(
+    explicit_path: Option<&PathBuf>,
+    file_name: &str,
+    candidate_dirs: &[PathBuf],
+) -> Result<Option<PathBuf>, AppError> {
+    if let Some(path) = explicit_path {
+        if path.exists() {
+            return Ok(Some(path.clone()));
+        }
+
+        return Err(AppError::bad_request(format!(
+            "{file_name} not found: {}",
+            path.display()
+        )));
+    }
+
+    for dir in candidate_dirs {
+        let candidate = dir.join(file_name);
+        if candidate.exists() {
+            return Ok(Some(candidate));
+        }
+    }
+
+    Ok(None)
+}
+
 impl AsrEngine {
     fn load(args: &Args) -> Result<Self, AppError> {
         let candidate_dirs = candidate_model_dirs(args);
@@ -237,19 +319,37 @@ impl AsrEngine {
             resolve_asset_path(args.model.as_ref(), DEFAULT_MODEL_FILE, &candidate_dirs)?;
         let tokens_path =
             resolve_asset_path(args.tokens.as_ref(), DEFAULT_TOKENS_FILE, &candidate_dirs)?;
+        let punct_candidate_dirs = punct_model_candidate_dirs(args);
+        let punctuation_model_path = resolve_optional_asset_path(
+            args.punct_model.as_ref(),
+            DEFAULT_PUNCT_MODEL_FILE,
+            &punct_candidate_dirs,
+        )?;
         let model_root = model_path
             .parent()
             .map(Path::to_path_buf)
             .ok_or_else(|| AppError::internal("Resolved model path has no parent directory."))?;
+        let punctuator = if let Some(path) = &punctuation_model_path {
+            Some(Mutex::new(Self::create_punctuator(
+                path,
+                args.threads.max(1),
+                args.provider.trim(),
+                args.debug,
+            )?))
+        } else {
+            None
+        };
 
         let engine = Self {
             model_root,
             model_path,
             tokens_path,
+            punctuation_model_path,
             default_language: normalize_language(Some(&args.language), "zh"),
             provider: args.provider.trim().to_owned(),
             debug: args.debug,
             threads: args.threads.max(1),
+            punctuator,
         };
 
         ensure_supported_language(&engine.default_language)?;
@@ -277,6 +377,46 @@ impl AsrEngine {
         })
     }
 
+    fn create_punctuator(
+        model_path: &Path,
+        threads: i32,
+        provider: &str,
+        debug: bool,
+    ) -> Result<OfflinePunctuation, AppError> {
+        let mut config = OfflinePunctuationConfig::default();
+        config.model.ct_transformer = Some(model_path.display().to_string());
+        config.model.num_threads = threads;
+        config.model.provider = Some(provider.to_owned());
+        config.model.debug = debug;
+
+        OfflinePunctuation::create(&config).ok_or_else(|| {
+            AppError::internal("Failed to create punctuator. Check punctuation model path.")
+        })
+    }
+
+    fn restore_punctuation(&self, text: &str) -> Result<String, AppError> {
+        let raw = text.trim();
+        if raw.is_empty() {
+            return Ok(String::new());
+        }
+
+        let Some(punctuator) = &self.punctuator else {
+            return Ok(raw.to_owned());
+        };
+
+        let punctuator = punctuator
+            .lock()
+            .map_err(|_| AppError::internal("Punctuation model lock was poisoned."))?;
+
+        match punctuator.add_punctuation(raw) {
+            Some(text) => Ok(text.trim().to_owned()),
+            None => {
+                warn!("Punctuation restoration failed. Returning raw ASR text.");
+                Ok(raw.to_owned())
+            }
+        }
+    }
+
     fn transcribe(
         &self,
         wav_bytes: &[u8],
@@ -299,10 +439,11 @@ impl AsrEngine {
         let result = stream
             .get_result()
             .ok_or_else(|| AppError::internal("Recognizer returned no transcription result."))?;
+        let text = self.restore_punctuation(&result.text)?;
 
         Ok(TranscriptionResponse {
             ok: true,
-            text: result.text.trim().to_owned(),
+            text,
             language,
             elapsed_ms: started_at.elapsed().as_millis(),
             audio_duration_ms: audio.duration_ms,
@@ -386,6 +527,12 @@ async fn healthz(State(state): State<AppState>) -> Result<Json<HealthResponse>, 
         model_root: state.engine.model_root.display().to_string(),
         model_path: state.engine.model_path.display().to_string(),
         tokens_path: state.engine.tokens_path.display().to_string(),
+        punctuation_enabled: state.engine.punctuator.is_some(),
+        punctuation_model_path: state
+            .engine
+            .punctuation_model_path
+            .as_ref()
+            .map(|path| path.display().to_string()),
         default_language: state.engine.default_language.clone(),
         provider: state.engine.provider.clone(),
         threads: state.engine.threads,
@@ -429,8 +576,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args = Args::parse();
     let engine = AsrEngine::load(&args)?;
     info!("Resolved model root: {}", engine.model_root.display());
-    info!("Model: {}", engine.model_path.display());
+    info!("ASR model: {}", engine.model_path.display());
     info!("Tokens: {}", engine.tokens_path.display());
+    if let Some(path) = &engine.punctuation_model_path {
+        info!("Punctuation model: {}", path.display());
+    } else {
+        info!("Punctuation model: disabled");
+    }
 
     let state = AppState {
         engine: Arc::new(engine),
@@ -464,5 +616,27 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 async fn shutdown_signal() {
     if let Err(err) = tokio::signal::ctrl_c().await {
         error!("Failed to listen for shutdown signal: {err}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn punctuation_model_restores_chinese_punctuation() {
+        let model_path = PathBuf::from(DEFAULT_PUNCT_MODEL_DIR).join(DEFAULT_PUNCT_MODEL_FILE);
+        if !model_path.exists() {
+            return;
+        }
+
+        let punctuator =
+            AsrEngine::create_punctuator(&model_path, 1, "cpu", false).expect("create punctuator");
+        let text = punctuator
+            .add_punctuation("我们都是木头人不会说话不会动")
+            .expect("punctuate");
+
+        assert_ne!(text, "我们都是木头人不会说话不会动");
+        assert!(text.contains('，') || text.contains('。') || text.contains('？'));
     }
 }
