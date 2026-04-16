@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VoiceBox Prototype</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f4f7fb;
+        --panel: rgba(255, 255, 255, 0.94);
+        --border: #cfd8e3;
+        --text: #16202b;
+        --muted: #5f6f82;
+        --accent: #0d9488;
+        --accent-strong: #0f766e;
+        --error: #b42318;
+        --error-bg: rgba(180, 35, 24, 0.08);
+        --ok: #027a48;
+        --ok-bg: rgba(2, 122, 72, 0.1);
+        --warn-bg: #fff7ed;
+        --warn-border: #fdba74;
+        --shadow: 0 18px 40px rgba(22, 32, 43, 0.12);
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0f1720;
+          --panel: rgba(17, 24, 39, 0.94);
+          --border: #334155;
+          --text: #e5eef8;
+          --muted: #9fb0c6;
+          --accent: #2dd4bf;
+          --accent-strong: #5eead4;
+          --error: #fda29b;
+          --error-bg: rgba(239, 68, 68, 0.12);
+          --ok: #6ee7b7;
+          --ok-bg: rgba(16, 185, 129, 0.12);
+          --warn-bg: rgba(120, 53, 15, 0.22);
+          --warn-border: rgba(251, 191, 36, 0.65);
+          --shadow: 0 22px 44px rgba(0, 0, 0, 0.35);
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 24px;
+        background:
+          radial-gradient(circle at top left, rgba(45, 212, 191, 0.18), transparent 28%),
+          linear-gradient(180deg, var(--bg), color-mix(in srgb, var(--bg) 86%, #ffffff 14%));
+        color: var(--text);
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+      }
+
+      .app {
+        width: min(100%, 820px);
+        padding: 28px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(10px);
+      }
+
+      .header {
+        display: grid;
+        gap: 8px;
+        margin-bottom: 20px;
+      }
+
+      .title {
+        margin: 0;
+        font-size: 1.75rem;
+        line-height: 1.2;
+      }
+
+      .subtitle {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .editor {
+        display: grid;
+        gap: 14px;
+      }
+
+      .service-panel {
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: color-mix(in srgb, var(--panel) 75%, transparent);
+      }
+
+      .field-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 120px 140px;
+        gap: 12px;
+      }
+
+      label {
+        display: grid;
+        gap: 6px;
+        font-size: 0.95rem;
+        font-weight: 600;
+      }
+
+      input,
+      textarea {
+        width: 100%;
+        padding: 12px 14px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+      }
+
+      textarea {
+        min-height: 240px;
+        resize: vertical;
+        line-height: 1.6;
+      }
+
+      input:focus,
+      textarea:focus {
+        outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+        border-color: var(--accent);
+      }
+
+      .controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        align-items: center;
+      }
+
+      button {
+        appearance: none;
+        border: 1px solid color-mix(in srgb, var(--accent) 46%, var(--border));
+        border-radius: 8px;
+        background: var(--accent);
+        color: white;
+        padding: 12px 18px;
+        min-width: 148px;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+          transform 120ms ease,
+          background 120ms ease,
+          border-color 120ms ease,
+          opacity 120ms ease;
+      }
+
+      button:hover:enabled {
+        transform: translateY(-1px);
+        background: var(--accent-strong);
+      }
+
+      button:focus-visible {
+        outline: 2px solid color-mix(in srgb, var(--accent) 30%, transparent);
+        outline-offset: 2px;
+      }
+
+      button[disabled] {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .voice-button.recording {
+        background: #dc2626;
+        border-color: #fca5a5;
+      }
+
+      .voice-button.transcribing {
+        background: #0369a1;
+        border-color: #7dd3fc;
+      }
+
+      .secondary-button {
+        background: transparent;
+        color: var(--text);
+      }
+
+      .secondary-button:hover:enabled {
+        background: color-mix(in srgb, var(--panel) 70%, transparent);
+      }
+
+      .status-group {
+        display: grid;
+        gap: 8px;
+        min-width: 240px;
+        flex: 1 1 320px;
+      }
+
+      .status-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px 12px;
+        align-items: center;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 6px 10px;
+        border-radius: 999px;
+        border: 1px solid var(--border);
+        font-size: 0.92rem;
+        font-weight: 600;
+      }
+
+      .badge::before {
+        content: "";
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        background: var(--muted);
+      }
+
+      .badge[data-state="recording"]::before {
+        background: #dc2626;
+      }
+
+      .badge[data-state="transcribing"]::before {
+        background: #0284c7;
+      }
+
+      .badge[data-state="error"]::before {
+        background: var(--error);
+      }
+
+      .badge[data-state="ok"] {
+        color: var(--ok);
+        background: var(--ok-bg);
+      }
+
+      .badge[data-state="ok"]::before {
+        background: var(--ok);
+      }
+
+      .badge[data-state="offline"] {
+        color: var(--error);
+        background: var(--error-bg);
+      }
+
+      .timer {
+        color: var(--muted);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .hint,
+      .error,
+      .service-hint {
+        margin: 0;
+        font-size: 0.95rem;
+        line-height: 1.5;
+      }
+
+      .hint,
+      .service-hint {
+        color: var(--muted);
+      }
+
+      .error {
+        color: var(--error);
+      }
+
+      .note {
+        margin-top: 16px;
+        padding: 12px 14px;
+        border: 1px solid var(--warn-border);
+        border-radius: 8px;
+        background: var(--warn-bg);
+        color: var(--text);
+        line-height: 1.5;
+      }
+
+      code {
+        font-family:
+          "SFMono-Regular", SFMono-Regular, ui-monospace, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+        font-size: 0.92em;
+      }
+
+      @media (max-width: 720px) {
+        .field-row {
+          grid-template-columns: 1fr;
+        }
+
+        button,
+        .voice-button,
+        .secondary-button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <header class="header">
+        <h1 class="title">语音输入接口测试页</h1>
+        <p class="subtitle">
+          页面直接录音并调用本地 Rust ASR 服务。Electron 现在只需要负责启动和打包，不再参与转写逻辑。
+        </p>
+      </header>
+
+      <section class="editor" aria-label="语音输入编辑区">
+        <div class="service-panel">
+          <div class="field-row">
+            <label for="serviceUrl">
+              服务地址
+              <input id="serviceUrl" value="http://127.0.0.1:8765" />
+            </label>
+            <label for="languageInput">
+              语言（仅支持 zh）
+              <input id="languageInput" value="zh" />
+            </label>
+            <label for="checkServiceButton">
+              服务探活
+              <button id="checkServiceButton" class="secondary-button" type="button">检查服务</button>
+            </label>
+          </div>
+
+          <div class="status-row">
+            <span id="serviceBadge" class="badge" data-state="offline">服务离线</span>
+            <p id="serviceHint" class="service-hint">先启动 Rust sidecar，再在这里检查健康状态。</p>
+          </div>
+        </div>
+
+        <label for="messageInput">输入内容</label>
+        <textarea
+          id="messageInput"
+          placeholder="点击开始录音。停止后会把音频编码为 16k 单声道 WAV 并发送到本地 /transcribe 接口。"
+        ></textarea>
+
+        <div class="controls">
+          <button id="voiceButton" class="voice-button" type="button" aria-label="开始录音">
+            开始录音
+          </button>
+
+          <div class="status-group">
+            <div class="status-row">
+              <span id="statusBadge" class="badge" data-state="idle">空闲</span>
+              <span id="timer" class="timer" aria-live="polite">00:00</span>
+            </div>
+            <p id="statusText" class="hint" aria-live="polite">点击按钮开始录音。</p>
+            <p id="errorText" class="error" aria-live="polite"></p>
+          </div>
+        </div>
+
+        <div class="note">
+          默认录音会在浏览器里编码为 <code>16kHz / mono / PCM WAV</code>，这样服务端只需要处理一个稳定格式，
+          不必额外集成浏览器私有音频容器的解码器。
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const TARGET_SAMPLE_RATE = 16000;
+
+      const serviceUrlInput = document.getElementById("serviceUrl");
+      const languageInput = document.getElementById("languageInput");
+      const checkServiceButton = document.getElementById("checkServiceButton");
+      const serviceBadge = document.getElementById("serviceBadge");
+      const serviceHint = document.getElementById("serviceHint");
+
+      const messageInput = document.getElementById("messageInput");
+      const voiceButton = document.getElementById("voiceButton");
+      const statusBadge = document.getElementById("statusBadge");
+      const statusText = document.getElementById("statusText");
+      const errorText = document.getElementById("errorText");
+      const timer = document.getElementById("timer");
+
+      if (window.location.protocol === "http:" || window.location.protocol === "https:") {
+        serviceUrlInput.value = window.location.origin;
+      }
+
+      let currentState = "idle";
+      let timerId = null;
+      let recordingStartedAt = 0;
+      let wavRecorder = null;
+
+      const stateCopy = {
+        idle: { badge: "空闲", button: "开始录音", text: "点击按钮开始录音。", aria: "开始录音" },
+        recording: { badge: "录音中", button: "结束录音", text: "正在录音，再次点击结束。", aria: "结束录音" },
+        transcribing: {
+          badge: "转写中",
+          button: "处理中",
+          text: "录音已结束，正在请求本地 ASR 服务。",
+          aria: "正在转写"
+        },
+        error: { badge: "异常", button: "重新录音", text: "发生错误，请查看下方提示。", aria: "重新录音" }
+      };
+
+      class WavRecorder {
+        constructor(stream) {
+          this.stream = stream;
+          this.context = null;
+          this.source = null;
+          this.processor = null;
+          this.sink = null;
+          this.buffers = [];
+          this.isRecording = false;
+        }
+
+        async start() {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          if (!AudioContextClass) {
+            throw new Error("当前环境不支持 AudioContext，无法采集原始音频。");
+          }
+
+          this.context = new AudioContextClass();
+          this.source = this.context.createMediaStreamSource(this.stream);
+          this.processor = this.context.createScriptProcessor(4096, 1, 1);
+          this.sink = this.context.createGain();
+          this.sink.gain.value = 0;
+          this.buffers = [];
+          this.isRecording = true;
+
+          this.processor.onaudioprocess = (event) => {
+            if (!this.isRecording) {
+              return;
+            }
+
+            const channelData = event.inputBuffer.getChannelData(0);
+            this.buffers.push(new Float32Array(channelData));
+          };
+
+          this.source.connect(this.processor);
+          this.processor.connect(this.sink);
+          this.sink.connect(this.context.destination);
+        }
+
+        async stop() {
+          this.isRecording = false;
+
+          const sampleRate = this.context ? this.context.sampleRate : TARGET_SAMPLE_RATE;
+          const merged = mergeBuffers(this.buffers);
+          const mono16k = sampleRate === TARGET_SAMPLE_RATE
+            ? merged
+            : downsampleBuffer(merged, sampleRate, TARGET_SAMPLE_RATE);
+          const wavBytes = encodeWav(mono16k, TARGET_SAMPLE_RATE);
+
+          this.cleanup();
+          return new Blob([wavBytes], { type: "audio/wav" });
+        }
+
+        cleanup() {
+          if (this.processor) {
+            this.processor.disconnect();
+            this.processor.onaudioprocess = null;
+          }
+          if (this.source) {
+            this.source.disconnect();
+          }
+          if (this.sink) {
+            this.sink.disconnect();
+          }
+          if (this.context) {
+            this.context.close();
+          }
+          this.stream.getTracks().forEach((track) => track.stop());
+
+          this.processor = null;
+          this.source = null;
+          this.sink = null;
+          this.context = null;
+          this.buffers = [];
+        }
+      }
+
+      function mergeBuffers(buffers) {
+        const totalLength = buffers.reduce((sum, buffer) => sum + buffer.length, 0);
+        const merged = new Float32Array(totalLength);
+        let offset = 0;
+        for (const buffer of buffers) {
+          merged.set(buffer, offset);
+          offset += buffer.length;
+        }
+        return merged;
+      }
+
+      function downsampleBuffer(buffer, inputRate, outputRate) {
+        if (outputRate > inputRate) {
+          throw new Error("输出采样率不能高于输入采样率。");
+        }
+
+        if (outputRate === inputRate) {
+          return buffer;
+        }
+
+        const sampleRateRatio = inputRate / outputRate;
+        const outputLength = Math.round(buffer.length / sampleRateRatio);
+        const outputBuffer = new Float32Array(outputLength);
+        let offsetBuffer = 0;
+        let offsetResult = 0;
+
+        while (offsetResult < outputBuffer.length) {
+          const nextOffsetBuffer = Math.round((offsetResult + 1) * sampleRateRatio);
+          let accum = 0;
+          let count = 0;
+
+          for (let i = offsetBuffer; i < nextOffsetBuffer && i < buffer.length; i += 1) {
+            accum += buffer[i];
+            count += 1;
+          }
+
+          outputBuffer[offsetResult] = count > 0 ? accum / count : 0;
+          offsetResult += 1;
+          offsetBuffer = nextOffsetBuffer;
+        }
+
+        return outputBuffer;
+      }
+
+      function encodeWav(samples, sampleRate) {
+        const dataLength = samples.length * 2;
+        const buffer = new ArrayBuffer(44 + dataLength);
+        const view = new DataView(buffer);
+
+        writeAscii(view, 0, "RIFF");
+        view.setUint32(4, 36 + dataLength, true);
+        writeAscii(view, 8, "WAVE");
+        writeAscii(view, 12, "fmt ");
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true);
+        view.setUint16(22, 1, true);
+        view.setUint32(24, sampleRate, true);
+        view.setUint32(28, sampleRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeAscii(view, 36, "data");
+        view.setUint32(40, dataLength, true);
+
+        floatTo16BitPCM(view, 44, samples);
+        return buffer;
+      }
+
+      function writeAscii(view, offset, value) {
+        for (let i = 0; i < value.length; i += 1) {
+          view.setUint8(offset + i, value.charCodeAt(i));
+        }
+      }
+
+      function floatTo16BitPCM(view, offset, input) {
+        for (let i = 0; i < input.length; i += 1, offset += 2) {
+          const sample = Math.max(-1, Math.min(1, input[i]));
+          view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7fff, true);
+        }
+      }
+
+      function setState(nextState, extraText = "") {
+        currentState = nextState;
+        const copy = stateCopy[nextState];
+        statusBadge.textContent = copy.badge;
+        statusBadge.dataset.state = nextState;
+        voiceButton.textContent = copy.button;
+        voiceButton.setAttribute("aria-label", copy.aria);
+        statusText.textContent = extraText || copy.text;
+        voiceButton.classList.toggle("recording", nextState === "recording");
+        voiceButton.classList.toggle("transcribing", nextState === "transcribing");
+        voiceButton.disabled = nextState === "transcribing";
+      }
+
+      function setError(message) {
+        errorText.textContent = message;
+        setState("error");
+      }
+
+      function clearError() {
+        errorText.textContent = "";
+      }
+
+      function startTimer() {
+        recordingStartedAt = Date.now();
+        stopTimer();
+        updateTimer();
+        timerId = window.setInterval(updateTimer, 200);
+      }
+
+      function stopTimer() {
+        if (timerId !== null) {
+          window.clearInterval(timerId);
+          timerId = null;
+        }
+      }
+
+      function resetTimer() {
+        stopTimer();
+        timer.textContent = "00:00";
+      }
+
+      function updateTimer() {
+        const elapsed = Math.max(0, Date.now() - recordingStartedAt);
+        const totalSeconds = Math.floor(elapsed / 1000);
+        const minutes = String(Math.floor(totalSeconds / 60)).padStart(2, "0");
+        const seconds = String(totalSeconds % 60).padStart(2, "0");
+        timer.textContent = `${minutes}:${seconds}`;
+      }
+
+      function insertTextAtCursor(text) {
+        const start = messageInput.selectionStart ?? messageInput.value.length;
+        const end = messageInput.selectionEnd ?? messageInput.value.length;
+        const original = messageInput.value;
+        messageInput.value = `${original.slice(0, start)}${text}${original.slice(end)}`;
+        const caret = start + text.length;
+        messageInput.focus();
+        messageInput.setSelectionRange(caret, caret);
+      }
+
+      function normalizedServiceUrl() {
+        return serviceUrlInput.value.trim().replace(/\/$/, "");
+      }
+
+      async function probeService(showSuccess = false) {
+        const baseUrl = normalizedServiceUrl();
+        if (!baseUrl) {
+          throw new Error("请先填写服务地址。");
+        }
+
+        const response = await fetch(`${baseUrl}/healthz`);
+        if (!response.ok) {
+          throw new Error(`服务检查失败，状态码 ${response.status}`);
+        }
+
+        const payload = await response.json();
+        serviceBadge.textContent = "服务在线";
+        serviceBadge.dataset.state = "ok";
+        serviceHint.textContent = `模型：${payload.model_family ?? "paraformer-zh-small"}，线程：${payload.threads}，默认语言：${payload.default_language ?? "zh"}`;
+        if (showSuccess) {
+          statusText.textContent = "本地 ASR 服务在线，可以开始录音。";
+        }
+      }
+
+      async function startRecording() {
+        clearError();
+
+        try {
+          await probeService();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "服务不可用。";
+          serviceBadge.textContent = "服务离线";
+          serviceBadge.dataset.state = "offline";
+          serviceHint.textContent = "启动 Rust 服务后，再次检查健康状态。";
+          setError(message);
+          return;
+        }
+
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          wavRecorder = new WavRecorder(stream);
+          await wavRecorder.start();
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "无法访问麦克风。";
+          setError(message);
+          return;
+        }
+
+        startTimer();
+        setState("recording");
+      }
+
+      async function stopRecording() {
+        if (!wavRecorder) {
+          return;
+        }
+
+        stopTimer();
+        setState("transcribing");
+
+        try {
+          const wavBlob = await wavRecorder.stop();
+          wavRecorder = null;
+
+          if (wavBlob.size === 0) {
+            throw new Error("没有采集到有效音频，请重新录音。");
+          }
+
+          const text = await transcribeAudio(wavBlob);
+          insertTextAtCursor(text);
+          clearError();
+          setState("idle", "转写完成，文字已插入输入框。");
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "转写失败。";
+          setError(message);
+        } finally {
+          resetTimer();
+        }
+      }
+
+      async function transcribeAudio(audioBlob) {
+        const baseUrl = normalizedServiceUrl();
+        const language = languageInput.value.trim().toLowerCase();
+        if (language && !["zh", "auto", "zh-cn", "cmn", "cmn-hans-cn"].includes(language)) {
+          throw new Error("当前 79M Paraformer 小模型仅支持中文，请填写 zh。");
+        }
+        const url = new URL(`${baseUrl}/transcribe`);
+        if (language) {
+          url.searchParams.set("language", language);
+        }
+
+        const response = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "audio/wav"
+          },
+          body: audioBlob
+        });
+
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(payload.error || `转写请求失败，状态码 ${response.status}`);
+        }
+
+        if (!payload.ok || typeof payload.text !== "string") {
+          throw new Error(payload.error || "服务没有返回有效文本。");
+        }
+
+        return payload.text;
+      }
+
+      voiceButton.addEventListener("click", async () => {
+        if (currentState === "recording") {
+          await stopRecording();
+          return;
+        }
+
+        if (currentState === "transcribing") {
+          return;
+        }
+
+        setState("idle");
+        await startRecording();
+      });
+
+      checkServiceButton.addEventListener("click", async () => {
+        clearError();
+        try {
+          await probeService(true);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "服务不可用。";
+          serviceBadge.textContent = "服务离线";
+          serviceBadge.dataset.state = "offline";
+          serviceHint.textContent = "启动 Rust 服务后，再次检查健康状态。";
+          setError(message);
+        }
+      });
+
+      window.addEventListener("beforeunload", () => {
+        stopTimer();
+        if (wavRecorder) {
+          wavRecorder.cleanup();
+          wavRecorder = null;
+        }
+      });
+
+      setState("idle");
+      probeService().catch(() => {
+        serviceBadge.textContent = "服务离线";
+        serviceBadge.dataset.state = "offline";
+      });
+    </script>
+  </body>
+</html>

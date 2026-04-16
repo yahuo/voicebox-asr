@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  APP_NAME: voicebox-asr
+  MODEL_DIR_NAME: paraformer-zh-small-2024-03-09
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+            target_id: linux-x64
+            archive_ext: tar.gz
+            binary_name: voicebox-asr
+          - os: windows-2025
+            target_id: windows-x64
+            archive_ext: zip
+            binary_name: voicebox-asr.exe
+          - os: macos-13
+            target_id: macos-x64
+            archive_ext: tar.gz
+            binary_name: voicebox-asr
+          - os: macos-14
+            target_id: macos-arm64
+            archive_ext: tar.gz
+            binary_name: voicebox-asr
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Install Git LFS objects
+        run: git lfs pull
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Prepare package directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACKAGE_ROOT="dist/${APP_NAME}-${{ matrix.target_id }}"
+          mkdir -p "${PACKAGE_ROOT}/models/${MODEL_DIR_NAME}"
+          cp "target/release/${{ matrix.binary_name }}" "${PACKAGE_ROOT}/${{ matrix.binary_name }}"
+          cp "models/${MODEL_DIR_NAME}/model.int8.onnx" "${PACKAGE_ROOT}/models/${MODEL_DIR_NAME}/model.int8.onnx"
+          cp "models/${MODEL_DIR_NAME}/tokens.txt" "${PACKAGE_ROOT}/models/${MODEL_DIR_NAME}/tokens.txt"
+          cp README.md "${PACKAGE_ROOT}/README.md"
+
+      - name: Create tar.gz archive
+        if: matrix.archive_ext == 'tar.gz'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd dist
+          tar -czf "${APP_NAME}-${{ matrix.target_id }}.tar.gz" "${APP_NAME}-${{ matrix.target_id }}"
+
+      - name: Create zip archive
+        if: matrix.archive_ext == 'zip'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path "dist/${env:APP_NAME}-${{ matrix.target_id }}" -DestinationPath "dist/${env:APP_NAME}-${{ matrix.target_id }}.zip" -Force
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.APP_NAME }}-${{ matrix.target_id }}
+          path: dist/${{ env.APP_NAME }}-${{ matrix.target_id }}.${{ matrix.archive_ext }}
+
+      - name: Publish release asset
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/${{ env.APP_NAME }}-${{ matrix.target_id }}.${{ matrix.archive_ext }}
+
