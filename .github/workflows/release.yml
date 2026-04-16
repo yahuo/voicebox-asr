@@ -27,7 +27,7 @@ jobs:
             target_id: windows-x64
             archive_ext: zip
             binary_name: voicebox-asr.exe
-          - os: macos-13
+          - os: macos-15-intel
             target_id: macos-x64
             archive_ext: tar.gz
             binary_name: voicebox-asr
@@ -89,4 +89,3 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/${{ env.APP_NAME }}-${{ matrix.target_id }}.${{ matrix.archive_ext }}
-
